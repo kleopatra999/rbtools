@@ -3,6 +3,7 @@ package commands
 import (
 	"github.com/codegangsta/cli"
 	"github.com/redbooth/rbtools/actions"
+	"github.com/redbooth/rbtools/validations"
 )
 
 const (
@@ -29,7 +30,7 @@ var download_path string
 var backupCreate = cli.Command{
 	Name:   "create",
 	Usage:  "Create a backup and download it",
-	Action: createAction,
+	Action: actions.CreateBackupAction,
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name:        "download-to",
@@ -37,18 +38,6 @@ var backupCreate = cli.Command{
 			Usage:       "Path where backups will be downloaded to...",
 			Destination: &download_path},
 	},
-}
-
-func createAction(ctx *cli.Context) {
-	var (
-		download_path = ctx.String("download-to")
-		host          = ctx.GlobalString("host")
-		username      = ctx.GlobalString("username")
-		password      = ctx.GlobalString("password")
-	)
-
-	actions.ValidateRequiredArguments(ctx)
-	println("Created backup...downloading to:", download_path, host, username, password)
 }
 
 /********************
@@ -65,7 +54,7 @@ func deleteAction(ctx *cli.Context) {
 		backup_id = ctx.Args().First()
 	)
 
-	actions.ValidateRequiredArguments(ctx)
+	validations.ValidateRequiredArguments(ctx)
 	println("Deleting backup:", backup_id)
 }
 
@@ -91,7 +80,7 @@ func pruneAction(ctx *cli.Context) {
 		older_than = ctx.String("days")
 	)
 
-	actions.ValidateRequiredArguments(ctx)
+	validations.ValidateRequiredArguments(ctx)
 	println("pruning all backups older than: ", older_than)
 }
 
@@ -117,6 +106,6 @@ func scheduleAction(ctx *cli.Context) {
 		schedule = ctx.String("schedule")
 	)
 
-	actions.ValidateRequiredArguments(ctx)
+	validations.ValidateRequiredArguments(ctx)
 	println("Scheduling backups ", schedule)
 }

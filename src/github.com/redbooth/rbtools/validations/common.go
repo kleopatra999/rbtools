@@ -1,4 +1,4 @@
-package actions
+package validations
 
 import (
 	"github.com/codegangsta/cli"
