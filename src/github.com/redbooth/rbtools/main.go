@@ -11,7 +11,11 @@ const (
 	NAME    = "rbtools"
 )
 
-var target_host string
+var (
+	target_host string
+	username    string
+	password    string
+)
 
 func main() {
 	app := cli.NewApp()
@@ -26,10 +30,46 @@ func main() {
 			Value:       "",
 			Usage:       "Host to target",
 			Destination: &target_host},
+
+		cli.StringFlag{
+			Name:        "username",
+			Value:       "",
+			Usage:       "Basic auth username",
+			Destination: &username},
+
+		cli.StringFlag{
+			Name:        "password",
+			Value:       "",
+			Usage:       "Basic auth password",
+			Destination: &username},
+	}
+
+	app.Action = func(ctx *cli.Context) {
+		var (
+			host     = ctx.GlobalString("host")
+			username = ctx.GlobalString("username")
+			password = ctx.GlobalString("password")
+		)
+
+		if host == "" {
+			println("--host argument is required!")
+			os.Exit(1)
+		}
+
+		if username == "" {
+			println("--username argument is required!")
+			os.Exit(1)
+		}
+
+		if password == "" {
+			println("--password argument is required!")
+			os.Exit(1)
+		}
+
 	}
 
 	app.Commands = []cli.Command{
-		commands.Update,
+		commands.Backup,
 	}
 
 	app.Run(os.Args)

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"github.com/codegangsta/cli"
+	"github.com/redbooth/rbtools/actions"
 )
 
 const (
@@ -15,6 +16,9 @@ var Backup = cli.Command{
 	Usage: "Perform backup-related actions against Redbooth instance",
 	Subcommands: []cli.Command{
 		backupCreate,
+		backupDelete,
+		backupPrune,
+		backupSchedule,
 	},
 }
 
@@ -38,9 +42,13 @@ var backupCreate = cli.Command{
 func createAction(ctx *cli.Context) {
 	var (
 		download_path = ctx.String("download-to")
+		host          = ctx.GlobalString("host")
+		username      = ctx.GlobalString("username")
+		password      = ctx.GlobalString("password")
 	)
 
-	println("Created backup...downloading to:", download_path)
+	actions.ValidateRequiredArguments(ctx)
+	println("Created backup...downloading to:", download_path, host, username, password)
 }
 
 /********************
@@ -57,6 +65,7 @@ func deleteAction(ctx *cli.Context) {
 		backup_id = ctx.Args().First()
 	)
 
+	actions.ValidateRequiredArguments(ctx)
 	println("Deleting backup:", backup_id)
 }
 
@@ -82,6 +91,7 @@ func pruneAction(ctx *cli.Context) {
 		older_than = ctx.String("days")
 	)
 
+	actions.ValidateRequiredArguments(ctx)
 	println("pruning all backups older than: ", older_than)
 }
 
@@ -107,5 +117,6 @@ func scheduleAction(ctx *cli.Context) {
 		schedule = ctx.String("schedule")
 	)
 
+	actions.ValidateRequiredArguments(ctx)
 	println("Scheduling backups ", schedule)
 }
