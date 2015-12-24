@@ -4,56 +4,185 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/codegangsta/cli"
+	"github.com/jmoiron/jsonq"
 	"github.com/parnurzeal/gorequest"
 	"github.com/redbooth/rbtools/validations"
 	"io"
+	"log"
+	"net/http"
+	"net/http/httputil"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
-	// "os"
 )
 
-type BackupResponse struct {
-	Message  string `json:"message"`
-	Location string `json:"location"`
-}
-
 type Backup struct {
-	Id    string
-	State string
+	Id           string
+	State        string
+	Progress     string
+	Name         string
+	Md5          string
+	Download_url string
+	Message      string
+	Location     string
 }
 
 var (
 	BackupIdRegexp = regexp.MustCompile(`backups\/(\d*)$`)
 )
 
-func decodeJSON(reader io.Reader) (response *BackupResponse, err error) {
-	response = new(BackupResponse)
-	err = json.NewDecoder(reader).Decode(response)
+func decodeJSON(reader io.Reader) (jq *jsonq.JsonQuery, err error) {
+	data := map[string]interface{}{}
+	err = json.NewDecoder(reader).Decode(&data)
+
+	if err != nil {
+		log.Fatal("Error decoding backup response: %s", err)
+	}
+
+	jq = jsonq.NewQuery(data)
 	return
+}
+
+func parseBackupCreationResponse(reader io.Reader) (backup *Backup, err error) {
+	jq, err := decodeJSON(reader)
+
+	if err != nil {
+		log.Fatal("Error parsing backup response: %s", err)
+	} else {
+		location, _ := jq.String("location")
+		fmt.Printf("====> parsing backup:%s \n", location)
+		backup = new(Backup)
+		backup.Id = BackupIdRegexp.FindStringSubmatch(location)[1]
+	}
+
+	return
+}
+
+func logError(message string, err error) {
+	if err != nil {
+		fmt.Printf("Error parsing %s : %s \n", message, err)
+		log.Fatal("Error parsing %s : %s", message, err)
+	}
 }
 
 func parseBackup(reader io.Reader) (backup *Backup, err error) {
-	backupResponse, err := decodeJSON(reader)
+	response, err := decodeJSON(reader)
 
 	if err != nil {
-		fmt.Printf(" boom ====> %s", err)
+		log.Fatal("Error parsing backup response: %s", err)
 	} else {
+		bkup, _ := response.Object("backup")
+		jq := jsonq.NewQuery(bkup)
 		backup = new(Backup)
-		backup.Id = BackupIdRegexp.FindStringSubmatch(backupResponse.Location)[1]
+		id, err := jq.Int("id")
+		backup.Id = strconv.Itoa(id)
+		logError("backup.Id", err)
+		backup.State, err = jq.String("state")
+		logError("backup.State", err)
+		progress, err := jq.Int("progress")
+		backup.Progress = strconv.Itoa(progress)
+		logError("backup.Progress", err)
+		backup.Name, err = jq.String("name")
+		logError("backup.Name", err)
+		if backup.State == "processed" {
+			backup.Md5, err = jq.String("md5")
+			logError("backup.Md5", err)
+			backup.Download_url, err = response.String("download_url")
+			logError("backup.Download_url", err)
+		}
+
+		fmt.Printf("====> parsed backup with id %s progress: %s (state: %s) download_url: %s name: %s \n", backup.Id, backup.Progress, backup.State, backup.Download_url, backup.Name)
 	}
 
 	return
 }
 
-func createHandler(response gorequest.Response, body string, errs []error) {
-	println("POST: ", body)
-	backup, err := parseBackup(strings.NewReader(body))
+func createHandler(ctx *cli.Context, callback func(backup *Backup)) func(gorequest.Response, string, []error) {
+	return func(response gorequest.Response, body string, errs []error) {
+		println("POST: ", body)
+		backup, err := parseBackupCreationResponse(strings.NewReader(body))
+
+		if err != nil {
+			log.Fatal(" Error parsing created backup response: %s", err)
+			return
+		}
+
+		fmt.Printf("====> created backup with id %s \n", backup.Id)
+		pollBackupStatus(ctx, backup, callback)(nil, "", nil)
+	}
+}
+
+func debug(data []byte, err error) {
+	if err == nil {
+		fmt.Printf("%s\n\n", data)
+	} else {
+		log.Fatalf("%s\n\n", err)
+	}
+}
+
+func downloadBackup(ctx *cli.Context, backup *Backup) {
+	var (
+		host                = ctx.GlobalString("host")
+		username            = ctx.GlobalString("username")
+		password            = ctx.GlobalString("password")
+		download_backup_url = fmt.Sprintf("%s/manager/backups/%s/download.json", host, backup.Id)
+	)
+
+	fmt.Printf("====> downloading backup with id %s from %s \n", backup.Id, download_backup_url)
+	download_path := fmt.Sprintf("/tmp/%s", backup.Name)
+
+	out, err := os.Create(download_path)
+	defer out.Close()
+
+	client := &http.Client{}
+	request, err := http.NewRequest("GET", download_backup_url, nil)
+	request.SetBasicAuth(username, password)
+	debug(httputil.DumpRequestOut(request, true))
+	response, err := client.Do(request)
+	defer response.Body.Close()
+
+	//debug(httputil.DumpResponse(response, true))
+	written, err := io.Copy(out, response.Body)
 
 	if err != nil {
-		fmt.Printf(" boom ====> %s", err)
-	} else {
-		fmt.Printf("====> created backup with id %s \n", backup.Id)
+		log.Fatal(" Error downloading backup: %s (%s)", err, written)
 	}
+	fmt.Printf("====> download backup with id %s to %s \n", backup.Id, download_path)
+}
+
+func pollBackupStatus(ctx *cli.Context, backup *Backup, callback func(backup *Backup)) func(gorequest.Response, string, []error) {
+	fmt.Printf("====> polling backup with id %s \n", backup.Id)
+
+	return func(response gorequest.Response, body string, errs []error) {
+		var (
+			host           = ctx.GlobalString("host")
+			username       = ctx.GlobalString("username")
+			password       = ctx.GlobalString("password")
+			get_backup_url = fmt.Sprintf("%s/manager/backups/%s.json", host, backup.Id)
+			polledBackup   *Backup
+		)
+
+		if response != nil {
+			poll, err := parseBackup(strings.NewReader(body))
+			polledBackup = poll
+
+			if err != nil {
+				log.Fatal(" Error parsing backup poll response: %s", err)
+			}
+		}
+
+		if polledBackup != nil && polledBackup.State == "processed" {
+			downloadBackup(ctx, polledBackup)
+		} else {
+			fmt.Printf("====> issuing poll for backup with id %s \n", backup.Id)
+			gorequest.New().SetBasicAuth(username, password).Get(get_backup_url).End(pollBackupStatus(ctx, backup, callback))
+		}
+	}
+}
+
+func onBackupDownload(backup *Backup) {
+	fmt.Printf("====> downloaded backup with id %s \n", backup.Id)
 }
 
 func CreateBackupAction(ctx *cli.Context) {
@@ -69,5 +198,5 @@ func CreateBackupAction(ctx *cli.Context) {
 
 	validations.ValidateRequiredArguments(ctx)
 
-	gorequest.New().SetBasicAuth(username, password).Post(post_backup_url).End(createHandler)
+	gorequest.New().SetBasicAuth(username, password).Post(post_backup_url).End(createHandler(ctx, onBackupDownload))
 }
