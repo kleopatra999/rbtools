@@ -46,16 +46,7 @@ var backupCreate = cli.Command{
 var backupDelete = cli.Command{
 	Name:   "delete",
 	Usage:  "Delete a backup",
-	Action: deleteAction,
-}
-
-func deleteAction(ctx *cli.Context) {
-	var (
-		backup_id = ctx.Args().First()
-	)
-
-	validations.ValidateRequiredArguments(ctx)
-	println("Deleting backup:", backup_id)
+	Action: actions.DeleteBackupAction,
 }
 
 /********************
@@ -85,7 +76,7 @@ func pruneAction(ctx *cli.Context) {
 }
 
 /********************
- *   PRUNE          *
+ *   SCHEDULE       *
  ********************/
 var schedule string
 var backupSchedule = cli.Command{

@@ -17,6 +17,7 @@ var (
 	password    string
 )
 
+// TODO: Allow config file for most flags
 func main() {
 	app := cli.NewApp()
 	app.Name = NAME
