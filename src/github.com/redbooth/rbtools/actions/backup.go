@@ -184,7 +184,7 @@ func pollBackupStatus(ctx *cli.Context, backup *Backup, callback func(backup *Ba
 		if polledBackup != nil && polledBackup.State == "processed" {
 			downloadBackup(ctx, polledBackup)
 		} else {
-			time.Sleep(2)
+			time.Sleep(2 * time.Second)
 			gorequest.New().SetBasicAuth(username, password).Get(get_backup_url).End(pollBackupStatus(ctx, backup, callback))
 		}
 	}
@@ -231,4 +231,28 @@ func DeleteBackupAction(ctx *cli.Context) {
 	}
 
 	fmt.Printf("Successfully deleted backup with id %s \n", backup_id)
+}
+
+func ListBackupAction(ctx *cli.Context) {
+
+	var (
+		host        = ctx.GlobalString("host")
+		username    = ctx.GlobalString("username")
+		password    = ctx.GlobalString("password")
+		backups_url = fmt.Sprintf("%s/manager/backups.json", host)
+	)
+
+	validations.ValidateRequiredArguments(ctx)
+
+	response, body, err := gorequest.New().SetBasicAuth(username, password).Get(backups_url).End()
+
+	if err != nil {
+		log.Fatal("error: Listing backups (%s)", err)
+	}
+
+	if response.StatusCode != 200 {
+		log.Fatal("error: Listing backups (status: %s)", response.Status)
+	}
+
+	fmt.Printf(body)
 }

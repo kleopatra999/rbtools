@@ -16,11 +16,21 @@ var Backup = cli.Command{
 	Name:  "backup",
 	Usage: "Perform backup-related actions against Redbooth instance",
 	Subcommands: []cli.Command{
+		backupList,
 		backupCreate,
 		backupDelete,
 		backupPrune,
 		backupSchedule,
 	},
+}
+
+/********************
+ *   LIST           *
+ ********************/
+var backupList = cli.Command{
+	Name:   "list",
+	Usage:  "List all backups",
+	Action: actions.ListBackupAction,
 }
 
 /********************
